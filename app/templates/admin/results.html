@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Dashboard</a></li>
+            <li class="breadcrumb-item active">{{ exam.title }} - Results</li>
+        </ol>
+    </nav>
+    <h2>Exam Results: {{ exam.title }}</h2>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Analytics Summary</h5>
+        <div class="row text-center">
+            <div class="col">
+                <p class="mb-0">Total Attempts</p>
+                <h3>{{ attempts|count }}</h3>
+            </div>
+            <div class="col">
+                <p class="mb-0">Avg. Score</p>
+                <h3>--</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>Student</th>
+                <th>Roll No</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Tab Switches</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for att in attempts %}
+            <tr>
+                <td>{{ att.student.full_name }}</td>
+                <td>{{ att.student.roll_number }}</td>
+                <td><span class="badge {{ 'bg-success' if att.status == 'submitted' else 'bg-warning' }}">{{ att.status }}</span></td>
+                <td>{{ att.start_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="{{ 'text-danger fw-bold' if att.tab_switches > 2 else '' }}">{{ att.tab_switches }}</td>
+                <td>
+                    <button class="btn btn-sm btn-info">View Details</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4 bg-light">
+            <div class="card-body">
+                <h3>Welcome, {{ current_user.full_name }}</h3>
+                <p class="text-muted">Roll Number: {{ current_user.roll_number }} | School ID: {{ current_user.school_id }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3>Available Exams</h3>
+<div class="row">
+    {% for exam in exams %}
+    <div class="col-md-4">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">{{ exam.title }}</h5>
+                <p class="card-text text-truncate">{{ exam.description }}</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">{{ exam.duration }} mins</span>
+                    <a href="{{ url_for('student.instructions', exam_id=exam.id) }}" class="btn btn-outline-primary">View Instructions</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-md-12">
+        <div class="alert alert-info">No exams are currently active.</div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
