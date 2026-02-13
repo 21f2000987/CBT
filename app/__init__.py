@@ -1,4 +1,5 @@
 import os
+import sys
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -18,7 +19,13 @@ migrate = Migrate()
 csrf = CSRFProtect()
 
 def create_app():
-    app = Flask(__name__)
+    # Handle paths for PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        template_folder = os.path.join(sys._MEIPASS, 'app', 'templates')
+        static_folder = os.path.join(sys._MEIPASS, 'app', 'static')
+        app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+    else:
+        app = Flask(__name__)
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key')
 
     # Use SQLite locally and PostgreSQL on Vercel/Production if DATABASE_URL is provided

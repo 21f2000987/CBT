@@ -15,7 +15,21 @@ A comprehensive, offline-first Computer Based Test (CBT) platform built with Fla
 1. Clone the repository.
 2. Install dependencies: `pip install -r requirements.txt`
 3. Set up environment variables in a `.env` file (SECRET_KEY, DATABASE_URL).
-4. Run the application: `python run.py`
+4. Run the application: `python index.py`
+
+## VS Code Setup
+- Open the project folder in VS Code.
+- Install the **Python** extension.
+- Select your Python interpreter (Ctrl+Shift+P -> "Python: Select Interpreter").
+- Go to the "Run and Debug" tab (Ctrl+Shift+D).
+- Select **Python: Flask** and press F5 to start debugging.
+
+## Bundling for PC (Standalone EXE)
+To create a single-file executable for offline use on individual PCs:
+1. Install PyInstaller: `pip install pyinstaller`
+2. Run the bundling script: `python build_exe.py`
+3. The standalone application will be generated in the `dist` folder.
+4. Copy the `.exe` to any PC to install/run the exam engine offline.
 
 ## Deployment
-Ready for deployment on **Vercel**.
+Ready for deployment on **Vercel** (using `index.py`).
