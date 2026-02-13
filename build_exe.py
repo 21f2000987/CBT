@@ -17,11 +17,9 @@ def build():
         "flask_sqlalchemy",
         "flask_login",
         "flask_bcrypt",
-        "flask_migrate",
         "flask_wtf",
         "wtforms",
-        "email_validator",
-        "alembic"
+        "email_validator"
     ]
 
     sep = os.pathsep

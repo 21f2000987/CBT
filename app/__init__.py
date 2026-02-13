@@ -4,7 +4,6 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_bcrypt import Bcrypt
-from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
 
@@ -15,7 +14,6 @@ bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
 login_manager.login_message_category = 'info'
-migrate = Migrate()
 csrf = CSRFProtect()
 
 def create_app():
@@ -37,6 +35,13 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = os.path.join(app.static_folder, 'uploads')
 
+    # Ensure instance folder exists for SQLite
+    if not os.path.exists(app.instance_path):
+        try:
+            os.makedirs(app.instance_path)
+        except Exception as e:
+            print(f"Warning: Could not create instance folder: {e}")
+
     # On Vercel, the filesystem is read-only. We try to create the folder but don't crash if it fails.
     try:
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -47,7 +52,6 @@ def create_app():
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
-    migrate.init_app(app, db)
     csrf.init_app(app)
 
     from app.routes.auth import auth
@@ -57,5 +61,9 @@ def create_app():
     app.register_blueprint(auth)
     app.register_blueprint(admin)
     app.register_blueprint(student)
+
+    # Automatically create database tables for simplicity
+    with app.app_context():
+        db.create_all()
 
     return app

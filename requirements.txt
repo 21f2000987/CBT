@@ -3,7 +3,6 @@ flask
 flask-sqlalchemy
 flask-login
 flask-bcrypt
-flask-migrate
 python-dotenv
 requests
 pycryptodome
@@ -11,4 +10,3 @@ psycopg2-binary
 wtforms
 email-validator
 dnspython
-alembic
