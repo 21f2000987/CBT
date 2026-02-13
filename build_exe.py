@@ -19,7 +19,8 @@ def build():
         "flask_bcrypt",
         "flask_wtf",
         "wtforms",
-        "email_validator"
+        "email_validator",
+        "dotenv"
     ]
 
     sep = os.pathsep
