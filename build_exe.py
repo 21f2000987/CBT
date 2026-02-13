@@ -12,10 +12,17 @@ def build():
         print("PyInstaller not found. Installing...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
 
-    # Define the PyInstaller command
-    # --onefile: bundle into a single executable
-    # --add-data: include templates and static files
-    # --name: name of the output file
+    # Define hidden imports for Flask extensions
+    hidden_imports = [
+        "flask_sqlalchemy",
+        "flask_login",
+        "flask_bcrypt",
+        "flask_migrate",
+        "flask_wtf",
+        "wtforms",
+        "email_validator",
+        "alembic"
+    ]
 
     sep = os.pathsep
     command = [
@@ -26,12 +33,19 @@ def build():
         f"--add-data=app/templates{sep}app/templates",
         f"--add-data=app/static{sep}app/static",
         "--name=CBTEngine",
-        "index.py"
     ]
 
+    for hi in hidden_imports:
+        command.extend(["--hidden-import", hi])
+
+    command.append("index.py")
+
     print(f"Running command: {' '.join(command)}")
-    subprocess.check_call(command)
-    print("\nBundling complete! The executable is in the 'dist' folder.")
+    try:
+        subprocess.check_call(command)
+        print("\nBundling complete! The executable is in the 'dist' folder.")
+    except Exception as e:
+        print(f"\nError during bundling: {e}")
 
 if __name__ == "__main__":
     build()
