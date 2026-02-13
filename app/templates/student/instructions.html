@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">General Instructions</h4>
+            </div>
+            <div class="card-body" style="max-height: 60vh; overflow-y: auto;">
+                <h5>{{ exam.title }}</h5>
+                <hr>
+                <ol>
+                    <li>The total duration of the exam is {{ exam.duration }} minutes.</li>
+                    <li>The clock will be set at the server. The countdown timer in the top right corner of the screen will display the remaining time available for you to complete the examination. When the timer reaches zero, the examination will end by itself. You will not be required to end or submit your examination.</li>
+                    <li>The Question Palette displayed on the right side of the screen will show the status of each question using one of the following symbols:
+                        <ul>
+                            <li><span class="badge bg-secondary">Silver</span> You have not visited the question yet.</li>
+                            <li><span class="badge bg-danger">Red</span> You have not answered the question.</li>
+                            <li><span class="badge bg-success">Green</span> You have answered the question.</li>
+                            <li><span class="badge bg-warning">Yellow</span> You have NOT answered the question, but have marked the question for review.</li>
+                        </ul>
+                    </li>
+                    <li>To select your answer, click on the button of one of the options.</li>
+                    <li>To deselect your chosen answer, click on the <strong>Clear Response</strong> button.</li>
+                    <li>To save your answer, you MUST click on the <strong>Save & Next</strong> button.</li>
+                </ol>
+            </div>
+            <div class="card-footer text-end">
+                <div class="form-check text-start mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirmReady">
+                    <label class="form-check-label" for="confirmReady">
+                        I have read and understood the instructions.
+                    </label>
+                </div>
+                <form action="{{ url_for('student.start_exam', exam_id=exam.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" id="startBtn" class="btn btn-success" disabled>I am ready to begin</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('confirmReady').addEventListener('change', function() {
+        document.getElementById('startBtn').disabled = !this.checked;
+    });
+</script>
+{% endblock %}
