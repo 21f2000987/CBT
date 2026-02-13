@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam: {{ exam.title }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+    <style>
+        /* CSS to hide elements for security */
+        body { user-select: none; -webkit-user-select: none; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+    <div class="exam-header">
+        <div>
+            <h4 class="mb-0">{{ exam.title }}</h4>
+        </div>
+        <div class="d-flex align-items-center">
+            <div class="me-4 text-end">
+                <small class="text-muted d-block">Time Left</small>
+                <span id="countdown" class="timer">00:00:00</span>
+            </div>
+            <div class="student-info d-flex align-items-center">
+                <div class="me-2">
+                    <small class="d-block fw-bold">{{ current_user.full_name }}</small>
+                    <small class="text-muted">{{ current_user.roll_number }}</small>
+                </div>
+                <img src="https://ui-avatars.com/api/?name={{ current_user.full_name }}&background=0D8ABC&color=fff" width="40" height="40" class="rounded-circle">
+            </div>
+        </div>
+    </div>
+
+    <div class="exam-main">
+        <div class="question-area" id="questionArea">
+            <!-- Questions will be loaded here via JS -->
+            <div id="qContent">
+                <h5 id="qNumber">Question 1</h5>
+                <hr>
+                <div id="qText" class="mb-4">Loading question...</div>
+                <div id="qOptions"></div>
+            </div>
+        </div>
+
+        <div class="palette-area">
+            <table class="summary-table">
+                <tr>
+                    <td><span class="badge bg-success">0</span> Answered</td>
+                    <td><span class="badge bg-danger">0</span> Not Answered</td>
+                </tr>
+                <tr>
+                    <td><span class="badge bg-warning">0</span> Marked</td>
+                    <td><span class="badge bg-secondary">0</span> Not Visited</td>
+                </tr>
+            </table>
+            <hr>
+            <h6>Question Palette</h6>
+            <div class="question-palette" id="palette">
+                {% for q in questions %}
+                <div class="palette-btn not-visited" id="pbtn-{{ q.id }}" onclick="loadQuestion({{ loop.index0 }})">{{ loop.index }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="mt-auto d-grid">
+                <button class="btn btn-primary" id="submitExamBtn" onclick="submitExam()" disabled>Submit Exam</button>
+                <small id="submitWarning" class="text-danger mt-1" style="font-size: 10px;">Submission allowed after 60 mins.</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Virtual Keyboard Modal -->
+    <div class="modal fade" id="keyboardModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">On-screen Keyboard</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="keyboard" class="d-flex flex-wrap gap-1 justify-content-center">
+                        <!-- Key buttons will be generated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="exam-footer">
+        <div>
+            <button class="btn btn-outline-secondary me-2" onclick="markForReview()">Mark for Review & Next</button>
+            <button class="btn btn-outline-danger" onclick="clearResponse()">Clear Response</button>
+        </div>
+        <div>
+            <button class="btn btn-success px-5" onclick="saveAndNext()">Save & Next</button>
+        </div>
+    </div>
+
+    <script>
+        const questions = [
+            {% for q in questions %}
+            {
+                id: {{ q.id }},
+                text: `{{ q.question_text|safe }}`,
+                image: '{{ url_for("static", filename=q.image_path) if q.image_path else "" }}',
+                type: '{{ q.question_type }}',
+                options: [
+                    {% for opt in q.options %}
+                    { id: {{ opt.id }}, text: `{{ opt.option_text|safe }}` },
+                    {% endfor %}
+                ],
+                status: '{{ responses[q.id].status }}',
+                savedAnswer: '{{ responses[q.id].selected_options or responses[q.id].answer_text or "" }}'
+            },
+            {% endfor %}
+        ];
+
+        let currentIndex = 0;
+        let timeLeft = {{ attempt.time_left }};
+        const attemptId = {{ attempt.id }};
+
+        function init() {
+            // Save questions to local storage for offline access
+            localStorage.setItem(`exam_${attemptId}_questions`, JSON.stringify(questions));
+
+            updateTimer();
+            loadQuestion(0);
+            updatePalette();
+
+            // Start timer
+            setInterval(() => {
+                if(timeLeft > 0) {
+                    timeLeft--;
+                    updateTimer();
+                    updateSubmitButtonStatus();
+                } else {
+                    autoSubmit();
+                }
+            }, 1000);
+
+            // Background sync for offline responses
+            setInterval(syncOfflineResponses, 5000);
+
+            // Tab switch detection
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    logEvent('tab_switch');
+                }
+            });
+
+            {% if exam.is_full_screen_required %}
+            enableFullScreen();
+            {% endif %}
+        }
+
+        const ENC_KEY = CryptoJS.enc.Utf8.parse('1234567812345678');
+        const ENC_IV = CryptoJS.enc.Utf8.parse('1234567812345678');
+
+        function encryptData(data) {
+            return CryptoJS.AES.encrypt(JSON.stringify(data), ENC_KEY, {iv: ENC_IV}).toString();
+        }
+
+        function logEvent(type) {
+            const payload = encryptData({attempt_id: attemptId, event_type: type});
+            fetch('/exam/log_event', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({encrypted_data: payload})
+            }).then(res => res.json())
+            .then(data => {
+                if(type === 'tab_switch') {
+                    alert(`Warning! Tab switch detected. You have ${data.switches} violations. Continuous violations may lead to auto-submission.`);
+                    if(data.switches >= 5) {
+                        autoSubmit('Too many tab switches detected.');
+                    }
+                }
+            });
+        }
+
+        function openKeyboard() {
+            const kb = document.getElementById('keyboard');
+            const keys = ['अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ए', 'ऐ', 'ओ', 'औ', 'क', 'ख', 'ग', 'घ', 'ङ', 'च', 'छ', 'ज', 'झ', 'ञ', 'ट', 'ठ', 'ड', 'ढ', 'ण', 'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व', 'श', 'ष', 'स', 'ह'];
+            kb.innerHTML = '';
+            keys.forEach(k => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-outline-dark p-3';
+                btn.innerText = k;
+                btn.onclick = () => {
+                    document.getElementById('qAnswer').value += k;
+                };
+                kb.appendChild(btn);
+            });
+            const modal = new bootstrap.Modal(document.getElementById('keyboardModal'));
+            modal.show();
+        }
+
+        function enableFullScreen() {
+            const docElm = document.documentElement;
+            if (docElm.requestFullscreen) {
+                docElm.requestFullscreen();
+            } else if (docElm.mozRequestFullScreen) {
+                docElm.mozRequestFullScreen();
+            } else if (docElm.webkitRequestFullScreen) {
+                docElm.webkitRequestFullScreen();
+            } else if (docElm.msRequestFullscreen) {
+                docElm.msRequestFullscreen();
+            }
+        }
+
+        function updateSubmitButtonStatus() {
+            const totalDurationSeconds = {{ exam.duration }} * 60;
+            const elapsedSeconds = totalDurationSeconds - timeLeft;
+            const submitBtn = document.getElementById('submitExamBtn');
+            const warning = document.getElementById('submitWarning');
+
+            // Activate after 1 hour (3600 seconds) or if exam duration is less than 1 hr, then active immediately (optional?)
+            // But user said "strictly after 1 hr".
+            if (elapsedSeconds >= 3600 || totalDurationSeconds <= 3600) {
+                submitBtn.disabled = false;
+                warning.style.display = 'none';
+            } else {
+                const waitMins = Math.ceil((3600 - elapsedSeconds) / 60);
+                warning.innerText = `Submission allowed in ${waitMins} mins.`;
+            }
+        }
+
+        function updateTimer() {
+            const h = Math.floor(timeLeft / 3600);
+            const m = Math.floor((timeLeft % 3600) / 60);
+            const s = timeLeft % 60;
+            document.getElementById('countdown').innerText =
+                `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }
+
+        function loadQuestion(index) {
+            currentIndex = index;
+            const q = questions[index];
+            document.getElementById('qNumber').innerText = `Question ${index + 1}`;
+
+            let html = q.text;
+            if (q.image) {
+                html = `<img src="${q.image}" class="img-fluid mb-3" style="max-height: 300px;"><br>` + html;
+            }
+            document.getElementById('qText').innerHTML = html;
+
+            const optionsDiv = document.getElementById('qOptions');
+            optionsDiv.innerHTML = '';
+
+            if (q.type === 'MCQ' || q.type === 'MSQ') {
+                q.options.forEach(opt => {
+                    const checked = q.savedAnswer.split(',').includes(opt.id.toString());
+                    const inputType = q.type === 'MCQ' ? 'radio' : 'checkbox';
+                    optionsDiv.innerHTML += `
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="${inputType}" name="qOption" value="${opt.id}" id="opt${opt.id}" ${checked ? 'checked' : ''}>
+                            <label class="form-check-label" for="opt${opt.id}">${opt.text}</label>
+                        </div>
+                    `;
+                });
+            } else if (q.type === 'NAT' || q.type === 'SA' || q.type === 'LA') {
+                const isLong = q.type === 'LA';
+                if(isLong) {
+                    optionsDiv.innerHTML = `<textarea class="form-control" id="qAnswer" rows="5">${q.savedAnswer}</textarea>`;
+                    tinymce.remove('#qAnswer');
+                    tinymce.init({
+                        selector: '#qAnswer',
+                        setup: function (editor) {
+                            editor.on('change', function () {
+                                editor.save();
+                            });
+                        }
+                    });
+                } else {
+                    optionsDiv.innerHTML = `
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="qAnswer" value="${q.savedAnswer}">
+                            <button class="btn btn-outline-secondary" type="button" onclick="openKeyboard()">Keyboard</button>
+                        </div>
+                    `;
+                }
+            } else if (q.type === 'Labeling') {
+                optionsDiv.innerHTML = `
+                    <div class="labeling-container position-relative">
+                        <img src="${q.image || '/static/img/diagram_placeholder.png'}" class="img-fluid" style="max-width: 500px;">
+                        <div class="labels-bin mt-3 d-flex gap-2">
+                            <div class="badge bg-primary p-2 draggble" draggable="true">Part A</div>
+                            <div class="badge bg-primary p-2 draggble" draggable="true">Part B</div>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-muted small">Drag labels to their correct locations on the diagram.</p>
+                `;
+            }
+
+            if (q.status === 'not_visited') {
+                q.status = 'not_answered';
+                saveProgress(q.id, 'not_answered', q.savedAnswer);
+            }
+            updatePalette();
+        }
+
+        function saveAndNext() {
+            const q = questions[currentIndex];
+            let answer = '';
+
+            if (q.type === 'MCQ' || q.type === 'MSQ') {
+                const selected = Array.from(document.querySelectorAll('input[name="qOption"]:checked')).map(el => el.value);
+                answer = selected.join(',');
+            } else {
+                answer = document.getElementById('qAnswer').value;
+            }
+
+            if (answer) {
+                q.status = 'answered';
+                q.savedAnswer = answer;
+            } else {
+                q.status = 'not_answered';
+            }
+
+            saveProgress(q.id, q.status, answer).then(() => {
+                if (currentIndex < questions.length - 1) {
+                    loadQuestion(currentIndex + 1);
+                }
+            });
+        }
+
+        function markForReview() {
+            const q = questions[currentIndex];
+            q.status = 'marked';
+            saveProgress(q.id, 'marked', q.savedAnswer).then(() => {
+                if (currentIndex < questions.length - 1) {
+                    loadQuestion(currentIndex + 1);
+                }
+            });
+        }
+
+        function clearResponse() {
+            const q = questions[currentIndex];
+            q.savedAnswer = '';
+            q.status = 'not_answered';
+            loadQuestion(currentIndex);
+            saveProgress(q.id, 'not_answered', '');
+        }
+
+        async function saveProgress(qId, status, answer) {
+            const data = {
+                attempt_id: attemptId,
+                question_id: qId,
+                status: status,
+                time_left: timeLeft,
+                time_spent: 0
+            };
+            if (questions[currentIndex].type === 'MCQ' || questions[currentIndex].type === 'MSQ') {
+                data.selected_options = answer;
+            } else {
+                data.answer_text = answer;
+            }
+
+            // Store locally first for offline support
+            const offlineKey = `offline_resp_${attemptId}_${qId}`;
+            localStorage.setItem(offlineKey, JSON.stringify(data));
+
+            const payload = encryptData(data);
+            try {
+                const response = await fetch('/exam/save_response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify({encrypted_data: payload})
+                });
+                if (response.ok) {
+                    localStorage.removeItem(offlineKey);
+                }
+            } catch (e) {
+                console.log("Offline: Response saved locally.");
+            }
+            updatePalette();
+        }
+
+        async function syncOfflineResponses() {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith(`offline_resp_${attemptId}_`)) {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    const payload = encryptData(data);
+                    try {
+                        const response = await fetch('/exam/save_response', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                            },
+                            body: JSON.stringify({encrypted_data: payload})
+                        });
+                        if (response.ok) {
+                            localStorage.removeItem(key);
+                        }
+                    } catch (e) {
+                        break; // Still offline
+                    }
+                }
+            }
+        }
+
+        function updatePalette() {
+            questions.forEach((q, i) => {
+                const btn = document.getElementById(`pbtn-${q.id}`);
+                btn.className = `palette-btn ${q.status.replace('_', '-')}`;
+            });
+
+            // Update counts
+            const counts = { answered: 0, 'not-answered': 0, marked: 0, 'not-visited': 0 };
+            questions.forEach(q => counts[q.status.replace('_', '-')]++);
+
+            const badges = document.querySelectorAll('.summary-table .badge');
+            badges[0].innerText = counts.answered;
+            badges[1].innerText = counts['not-answered'];
+            badges[2].innerText = counts.marked;
+            badges[3].innerText = counts['not-visited'];
+        }
+
+        function submitExam() {
+            if (confirm('Are you sure you want to submit the exam?')) {
+                performSubmit();
+            }
+        }
+
+        function autoSubmit(reason) {
+            alert(reason || 'Time is up! Your exam will be submitted automatically.');
+            performSubmit();
+        }
+
+        function performSubmit() {
+            const payload = encryptData({attempt_id: attemptId});
+            fetch('/exam/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({encrypted_data: payload})
+            }).then(() => {
+                window.location.href = '/dashboard';
+            });
+        }
+
+        window.onload = init;
+
+        // Security: Disable shortcuts
+        document.onkeydown = function(e) {
+            // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+            if (
+                e.keyCode === 123 ||
+                (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) ||
+                (e.ctrlKey && e.keyCode === 85) ||
+                (e.ctrlKey && (e.keyCode === 83 || e.keyCode === 67 || e.keyCode === 86))
+            ) {
+                return false;
+            }
+        };
+
+        // Extra layer to disable right click and selection
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('copy', e => e.preventDefault());
+        document.addEventListener('paste', e => e.preventDefault());
+    </script>
+</body>
+</html>

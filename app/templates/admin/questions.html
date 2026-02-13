@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Dashboard</a></li>
+            <li class="breadcrumb-item active">{{ exam.title }} - Questions</li>
+        </ol>
+    </nav>
+    <h2>Manage Questions: {{ exam.title }}</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Add New Question</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('admin.add_question', exam_id=exam.id) }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label">Question Text</label>
+                        <textarea name="question_text" class="form-control" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select name="question_type" class="form-select" id="qTypeSelect" onchange="toggleOptions()">
+                            <option value="MCQ">MCQ (Single Choice)</option>
+                            <option value="MSQ">MSQ (Multiple Choice)</option>
+                            <option value="SA">Short Answer</option>
+                            <option value="LA">Long Answer</option>
+                            <option value="NAT">NAT (Numeric)</option>
+                            <option value="Code">Code</option>
+                            <option value="Labeling">Labeling (Diagram)</option>
+                        </select>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Marks</label>
+                            <input type="number" step="0.5" name="marks" class="form-control" value="1.0">
+                        </div>
+                        <div class="col">
+                            <label class="form-label">Neg. Marks</label>
+                            <input type="number" step="0.5" name="negative_marks" class="form-control" value="0.0">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Question Image/Diagram (Optional)</label>
+                        <input type="file" name="question_image" class="form-control" accept="image/*">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Difficulty</label>
+                        <select name="difficulty" class="form-select">
+                            <option value="easy">Easy</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                    </div>
+
+                    <div id="optionsContainer">
+                        <h6>Options</h6>
+                        <div id="optionsList">
+                            <div class="input-group mb-2">
+                                <div class="input-group-text">
+                                    <input type="checkbox" name="is_correct" value="0">
+                                </div>
+                                <input type="text" name="options" class="form-control" placeholder="Option 1">
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="addOption()">+ Add Option</button>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">Save Question</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">AI Dynamic Generator</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Topic/Chapter (NCERT)</label>
+                    <input type="text" id="aiTopic" class="form-control" placeholder="e.g. Life Processes">
+                </div>
+                <button type="button" class="btn btn-info w-100" onclick="generateAI()">Generate Questions</button>
+
+                <div id="aiResults" class="mt-3" style="display:none;">
+                    <h6>Generated Previews:</h6>
+                    <div id="aiList" class="list-group mb-3"></div>
+                    <button class="btn btn-success btn-sm w-100" onclick="approveAI()">Approve & Add All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <h3>Existing Questions</h3>
+        <div class="accordion" id="questionsAccordion">
+            {% for q in exam.questions %}
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="heading{{ q.id }}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ q.id }}">
+                        Q{{ loop.index }}: {{ q.question_text[:50] }}... ({{ q.question_type }})
+                    </button>
+                </h2>
+                <div id="collapse{{ q.id }}" class="accordion-collapse collapse" data-bs-parent="#questionsAccordion">
+                    <div class="accordion-body">
+                        {% if q.image_path %}
+                        <img src="{{ url_for('static', filename=q.image_path) }}" class="img-fluid mb-2" style="max-height: 200px;">
+                        {% endif %}
+                        <p><strong>Text:</strong> {{ q.question_text }}</p>
+                        <p><strong>Type:</strong> {{ q.question_type }} | <strong>Marks:</strong> {{ q.marks }} | <strong>Difficulty:</strong> {{ q.difficulty }}</p>
+                        {% if q.options %}
+                        <ul>
+                            {% for opt in q.options %}
+                            <li class="{{ 'text-success fw-bold' if opt.is_correct else '' }}">
+                                {{ opt.option_text }} {{ '(Correct)' if opt.is_correct else '' }}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleOptions() {
+    const type = document.getElementById('qTypeSelect').value;
+    const container = document.getElementById('optionsContainer');
+    container.style.display = (type === 'MCQ' || type === 'MSQ') ? 'block' : 'none';
+}
+
+let optionCount = 1;
+let currentAIQuestions = [];
+
+function generateAI() {
+    const topic = document.getElementById('aiTopic').value;
+    const examId = {{ exam.id }};
+    fetch(`/admin/exam/${examId}/ai-generate`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({topic: topic, count: 3})
+    })
+    .then(res => res.json())
+    .then(data => {
+        currentAIQuestions = data;
+        const list = document.getElementById('aiList');
+        list.innerHTML = '';
+        data.forEach((q, i) => {
+            const div = document.createElement('div');
+            div.className = 'list-group-item';
+            div.innerHTML = `<strong>${q.text}</strong><br><small>${q.type} - ${q.difficulty}</small>`;
+            list.appendChild(div);
+        });
+        document.getElementById('aiResults').style.display = 'block';
+    });
+}
+
+function approveAI() {
+    const examId = {{ exam.id }};
+    fetch(`/admin/exam/${examId}/ai-approve`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({questions: currentAIQuestions})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if(data.status === 'success') location.reload();
+    });
+}
+
+function addOption() {
+    const list = document.getElementById('optionsList');
+    const div = document.createElement('div');
+    div.className = 'input-group mb-2';
+    div.innerHTML = `
+        <div class="input-group-text">
+            <input type="checkbox" name="is_correct" value="${optionCount}">
+        </div>
+        <input type="text" name="options" class="form-control" placeholder="Option ${optionCount + 1}">
+    `;
+    list.appendChild(div);
+    optionCount++;
+}
+</script>
+{% endblock %}
